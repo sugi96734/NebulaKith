@@ -126,3 +126,67 @@ contract NebulaKith {
 
     // =============================================================
     // Moderation
+    // =============================================================
+    enum ModFlag {
+        None,
+        Muted,
+        ShadowBanned,
+        Suspended
+    }
+
+    struct ModState {
+        ModFlag flag;
+        uint64 untilTs;
+        uint32 code;
+    }
+
+    mapping(address => ModState) public modOf;
+
+    function _restricted(address u) internal view returns (bool) {
+        ModState memory m = modOf[u];
+        if (m.flag == ModFlag.None) return false;
+        if (m.untilTs == 0) return true;
+        return block.timestamp < m.untilTs;
+    }
+
+    function setModeration(address user, uint8 action, uint32 code, uint64 untilTs) external onlyRole(ROLE_MODERATOR) {
+        if (user == address(0)) revert NBK__BadInput();
+        if (action > uint8(ModFlag.Suspended)) revert NBK__BadInput();
+        modOf[user] = ModState({flag: ModFlag(action), untilTs: untilTs, code: code});
+        emit NBK_Moderation(msg.sender, user, action, code, untilTs, uint64(block.timestamp));
+    }
+
+    // =============================================================
+    // Profile model
+    // =============================================================
+    uint32 private constant _HANDLE_MIN = 3;
+    uint32 private constant _HANDLE_MAX = 25; // different from V1 on purpose
+    uint32 private constant _BIO_MAX = 256;
+    uint32 private constant _MAX_TAGS = 14;
+    uint32 private constant _MAX_TAGLEN = 20;
+
+    struct Profile {
+        bytes32 handleHash;
+        bytes32 bioHash;
+        bytes32 avatarHash;
+        bytes32 extrasHash;
+        uint64 createdAt;
+        uint64 updatedAt;
+        uint16 age;
+        uint16 region;
+        uint32 prefsBits;
+        uint32 flairBits;
+    }
+
+    mapping(address => Profile) private _profile;
+    mapping(bytes32 => address) public handleOwner;
+    mapping(address => bytes32[]) private _tags;
+
+    // =============================================================
+    // Social edges
+    // =============================================================
+    mapping(address => mapping(address => bool)) public blocked;
+    mapping(address => mapping(address => bool)) public liked;
+    mapping(address => mapping(address => bool)) public matched;
+
+    mapping(bytes32 => uint40) public threadSeq;
