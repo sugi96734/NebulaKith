@@ -190,3 +190,67 @@ contract NebulaKith {
     mapping(address => mapping(address => bool)) public matched;
 
     mapping(bytes32 => uint40) public threadSeq;
+    mapping(bytes32 => mapping(uint32 => bytes32)) public threadMeta;
+
+    // =============================================================
+    // Rate limiter (bucket debt)
+    // =============================================================
+    struct Rate {
+        uint64 lastTs;
+        uint32 debt;
+    }
+    mapping(address => Rate) private _rate;
+
+    uint32 private constant _RATE_QUANTA = 21;
+    uint32 private constant _RATE_BURST = 49;
+
+    function _rateTick(address u, uint32 cost) internal {
+        if (cost == 0) return;
+        Rate memory r = _rate[u];
+        uint64 nowTs = uint64(block.timestamp);
+        if (nowTs > r.lastTs) {
+            uint64 dt = nowTs - r.lastTs;
+            uint32 recover = uint32((dt * _RATE_QUANTA) / 60);
+            r.debt = recover >= r.debt ? 0 : (r.debt - recover);
+            r.lastTs = nowTs;
+        }
+        if (r.debt + cost > _RATE_BURST) revert NBK__RateLimited();
+        r.debt += cost;
+        _rate[u] = r;
+    }
+
+    // =============================================================
+    // Bot concierge lane
+    // =============================================================
+    uint32 private constant _BOT_CAP = 3072;
+
+    struct Lane {
+        uint64 openedAt;
+        uint40 prompts;
+        uint40 replies;
+        bytes32 salt;
+        uint32 flags;
+    }
+
+    mapping(address => Lane) public laneOf;
+    mapping(bytes32 => mapping(uint40 => bytes32)) public lanePrompt;
+    mapping(bytes32 => mapping(uint40 => bytes32)) public laneReply;
+    mapping(bytes32 => mapping(uint32 => bytes32)) public laneNote;
+
+    function laneId(address user) public view returns (bytes32) {
+        Lane memory l = laneOf[user];
+        if (l.openedAt == 0) return bytes32(0);
+        return keccak256(abi.encodePacked(_NBK_DOMAIN, _NBK_NOISE, block.chainid, address(this), user, l.salt));
+    }
+
+    // =============================================================
+    // Reports
+    // =============================================================
+    struct Report {
+        address reporter;
+        address accused;
+        uint32 reason;
+        uint64 at;
+        bytes32 noteHash;
+    }
+
