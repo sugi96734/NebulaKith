@@ -318,3 +318,67 @@ contract NebulaKith {
         return _profile[user].createdAt != 0;
     }
 
+    function tagsOf(address user) external view returns (bytes32[] memory tags) {
+        if (_profile[user].createdAt == 0) revert NBK__NoProfile();
+        return _tags[user];
+    }
+
+    // =============================================================
+    // Handle + tag normalization
+    // =============================================================
+    function _normalizeHandle(bytes calldata raw) internal pure returns (bytes memory) {
+        uint256 n = raw.length;
+        if (n < _HANDLE_MIN || n > _HANDLE_MAX) revert NBK__BadInput();
+        bytes memory out = new bytes(n);
+        for (uint256 i = 0; i < n; i++) {
+            bytes1 c = raw[i];
+            if (c >= 0x41 && c <= 0x5A) c = bytes1(uint8(c) + 32);
+            bool ok =
+                (c >= 0x61 && c <= 0x7A) ||
+                (c >= 0x30 && c <= 0x39) ||
+                (c == 0x5F) ||
+                (c == 0x2E) ||
+                (c == 0x2D);
+            if (!ok) revert NBK__BadInput();
+            out[i] = c;
+        }
+        if (out[0] == 0x2E || out[n - 1] == 0x2E) revert NBK__BadInput();
+        for (uint256 j = 1; j < n; j++) {
+            if (out[j] == 0x2E && out[j - 1] == 0x2E) revert NBK__BadInput();
+        }
+        return out;
+    }
+
+    function _tagHash(bytes calldata tag) internal pure returns (bytes32) {
+        uint256 n = tag.length;
+        if (n == 0 || n > _MAX_TAGLEN) revert NBK__BadInput();
+        bytes memory tmp = new bytes(n);
+        for (uint256 i = 0; i < n; i++) {
+            bytes1 c = tag[i];
+            if (c >= 0x41 && c <= 0x5A) c = bytes1(uint8(c) + 32);
+            if (c < 0x21 || c > 0x7E) revert NBK__BadInput();
+            if (c == 0x2F || c == 0x5C) revert NBK__BadInput();
+            tmp[i] = c;
+        }
+        return keccak256(tmp);
+    }
+
+    function _setTags(address user, bytes[] calldata tags) internal {
+        bytes32[] storage arr = _tags[user];
+        while (arr.length != 0) arr.pop();
+        for (uint256 i = 0; i < tags.length; i++) {
+            bytes32 th = _tagHash(tags[i]);
+            for (uint256 j = 0; j < i; j++) {
+                if (arr[j] == th) revert NBK__BadInput();
+            }
+            arr.push(th);
+            emit NBK_Tagged(user, th, true, uint64(block.timestamp));
+        }
+    }
+
+    // =============================================================
+    // Profile writes
+    // =============================================================
+    function mintProfile(
+        bytes calldata handle,
+        bytes32 bioHash,
