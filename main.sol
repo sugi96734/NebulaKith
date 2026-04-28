@@ -382,3 +382,67 @@ contract NebulaKith {
     function mintProfile(
         bytes calldata handle,
         bytes32 bioHash,
+        bytes32 avatarHash,
+        bytes32 extrasHash,
+        uint16 age,
+        uint16 region,
+        uint32 prefsBits,
+        uint32 flairBits,
+        bytes[] calldata tags
+    ) external whenLive {
+        if (_restricted(msg.sender)) revert NBK__Restricted();
+        if (_profile[msg.sender].createdAt != 0) revert NBK__AlreadyExists();
+        _rateTick(msg.sender, 3);
+
+        bytes memory norm = _normalizeHandle(handle);
+        bytes32 hh = keccak256(norm);
+        if (handleOwner[hh] != address(0)) revert NBK__HandleTaken();
+        if (tags.length > _MAX_TAGS) revert NBK__TooLarge();
+
+        Profile memory p;
+        p.handleHash = hh;
+        p.bioHash = bioHash;
+        p.avatarHash = avatarHash;
+        p.extrasHash = extrasHash;
+        p.createdAt = uint64(block.timestamp);
+        p.updatedAt = uint64(block.timestamp);
+        p.age = age;
+        p.region = region;
+        p.prefsBits = prefsBits;
+        p.flairBits = flairBits;
+
+        _profile[msg.sender] = p;
+        handleOwner[hh] = msg.sender;
+        _setTags(msg.sender, tags);
+
+        emit NBK_ProfileMinted(msg.sender, hh, uint64(block.timestamp));
+    }
+
+    function patchProfile(
+        uint32 mask,
+        bytes32 bioHash,
+        bytes32 avatarHash,
+        bytes32 extrasHash,
+        uint16 age,
+        uint16 region,
+        uint32 prefsBits,
+        uint32 flairBits,
+        bytes[] calldata tags
+    ) external whenLive {
+        if (_restricted(msg.sender)) revert NBK__Restricted();
+        Profile storage p = _profile[msg.sender];
+        if (p.createdAt == 0) revert NBK__NoProfile();
+        _rateTick(msg.sender, 2);
+
+        // mask bits:
+        // 1 bio, 2 avatar, 4 extras, 8 age, 16 region, 32 prefs, 64 flair, 128 tags
+        if ((mask & 1) != 0) p.bioHash = bioHash;
+        if ((mask & 2) != 0) p.avatarHash = avatarHash;
+        if ((mask & 4) != 0) p.extrasHash = extrasHash;
+        if ((mask & 8) != 0) p.age = age;
+        if ((mask & 16) != 0) p.region = region;
+        if ((mask & 32) != 0) p.prefsBits = prefsBits;
+        if ((mask & 64) != 0) p.flairBits = flairBits;
+        if ((mask & 128) != 0) {
+            if (tags.length > _MAX_TAGS) revert NBK__TooLarge();
+            _setTags(msg.sender, tags);
