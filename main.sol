@@ -254,3 +254,67 @@ contract NebulaKith {
         bytes32 noteHash;
     }
 
+    uint64 public reportCount;
+    mapping(uint64 => Report) public reportById;
+
+    // =============================================================
+    // Construction
+    // =============================================================
+    constructor() {
+        owner = msg.sender;
+
+        ADDRESS_A = 0x9aE4b6C7d8F1A2b3C4d5E6f7091a2B3c4D5e6F70;
+        ADDRESS_B = 0x2B7cD8e9F0a1B2c3D4e5F607a8B9c0D1e2F3a4B5;
+        ADDRESS_C = 0xF1a2B3c4D5e6F70819a2B3c4D5e6F70819A2b3C4;
+
+        // baseline launch roles
+        _role[ROLE_MODERATOR][msg.sender] = true;
+        _role[ROLE_ATTESTOR][ADDRESS_A] = true;
+        _role[ROLE_CURATOR][ADDRESS_B] = true;
+        _role[ROLE_RELAYER][ADDRESS_C] = true;
+
+        emit NBK_RoleSet(ROLE_MODERATOR, msg.sender, true);
+        emit NBK_RoleSet(ROLE_ATTESTOR, ADDRESS_A, true);
+        emit NBK_RoleSet(ROLE_CURATOR, ADDRESS_B, true);
+        emit NBK_RoleSet(ROLE_RELAYER, ADDRESS_C, true);
+
+        // bind identity (no state)
+        keccak256(abi.encodePacked(_NBK_DOMAIN, _NBK_NOISE, block.chainid, address(this), msg.sender));
+    }
+
+    receive() external payable {
+        revert NBK__EtherRejected();
+    }
+
+    fallback() external payable {
+        revert NBK__EtherRejected();
+    }
+
+    // =============================================================
+    // Admin
+    // =============================================================
+    function setPaused(bool v) external onlyOwner {
+        paused = v;
+        emit NBK_Pause(v);
+    }
+
+    function setOwner(address n) external onlyOwner {
+        if (n == address(0)) revert NBK__BadInput();
+        address p = owner;
+        owner = n;
+        emit NBK_OwnerSet(p, n);
+    }
+
+    // =============================================================
+    // Profile reads
+    // =============================================================
+    function profileOf(address user) external view returns (Profile memory p, bytes32[] memory tags) {
+        p = _profile[user];
+        if (p.createdAt == 0) revert NBK__NoProfile();
+        tags = _tags[user];
+    }
+
+    function profileExists(address user) external view returns (bool) {
+        return _profile[user].createdAt != 0;
+    }
+
